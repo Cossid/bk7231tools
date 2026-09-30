@@ -1,7 +1,7 @@
 #  Copyright (c) Kuba Szczodrzyński 2024-3-5.
 
 from binascii import crc32
-from time import sleep
+from time import monotonic, sleep
 
 from serial import Timeout
 
@@ -17,9 +17,9 @@ from .base.packets import (
 
 
 class BK7231SerialLinking(BK7231SerialInterface):
-    def connect(self):
-        # try to communicate
-        if not self.wait_for_link(self.link_timeout):
+    def connect(self, reset: bool = False):
+        # try to communicate (optionally resetting the chip while linking)
+        if not self.wait_for_link(self.link_timeout, reset=reset):
             raise TimeoutError("Timed out attempting to link with chip")
         # update the transmission baud rate
         if self.serial.baudrate != self.baudrate:
@@ -44,17 +44,28 @@ class BK7231SerialLinking(BK7231SerialInterface):
             self.serial.close()
             self.serial = None
 
-    def wait_for_link(self, timeout: float) -> bool:
+    def wait_for_link(self, timeout: float, reset: bool = False) -> bool:
         tm = Timeout(timeout)
         tm_prev = self.serial.timeout
         self.serial.timeout = 0.005
 
+        # if requested, run the HW reset sequence while sending link checks,
+        # so that the first check arrives right after the chip leaves reset
+        steps = self.hw_reset_steps() if reset else []
+        steps_done = 0
+        start = monotonic()
+
         command = BkLinkCheckCmnd()
         connected = False
         while not tm.expired():
+            elapsed = monotonic() - start
+            while steps_done < len(steps) and elapsed >= steps[steps_done][0]:
+                _, rts, dtr = steps[steps_done]
+                self.hw_reset_apply(rts, dtr)
+                steps_done += 1
             try:
                 response: BkLinkCheckResp = self.command(command)
-                if response and response.value == 0:
+                if response and response.value == 0 and steps_done == len(steps):
                     connected = True
                     break
             except ValueError:

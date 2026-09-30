@@ -377,8 +377,7 @@ def connect_device(device, baudrate, timeout, debug):
     if debug:
         s.debug = print
     s.info = print
-    s.hw_reset()
-    s.connect()
+    s.connect(reset=True)
     items = [
         f"Chip info: {s.chip_info}",
         f"Flash ID: {s.flash_id.hex(' ', -1) if s.flash_id else None}",
