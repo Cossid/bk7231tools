@@ -47,7 +47,7 @@ class BK7231SerialLinking(BK7231SerialInterface):
     def wait_for_link(self, timeout: float, reset: bool = False) -> bool:
         tm = Timeout(timeout)
         tm_prev = self.serial.timeout
-        self.serial.timeout = 0.005
+        self.serial.timeout = self.link_read_timeout
 
         # if requested, run the HW reset sequence while sending link checks,
         # so that the first check arrives right after the chip leaves reset
