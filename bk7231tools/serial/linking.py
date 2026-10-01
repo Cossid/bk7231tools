@@ -49,28 +49,33 @@ class BK7231SerialLinking(BK7231SerialInterface):
         tm_prev = self.serial.timeout
         self.serial.timeout = self.link_read_timeout
 
+        command = BkLinkCheckCmnd()
+
+        def link_check() -> bool:
+            try:
+                response: BkLinkCheckResp = self.command(command)
+                return bool(response and response.value == 0)
+            except ValueError:
+                return False
+
+        # try a link check first - the chip may already be in the bootloader,
+        # in which case no reset is needed
+        connected = link_check()
+
         # if requested, run the HW reset sequence while sending link checks,
         # so that the first check arrives right after the chip leaves reset
-        steps = self.hw_reset_steps() if reset else []
+        steps = self.hw_reset_steps() if reset and not connected else []
         steps_done = 0
         start = monotonic()
 
-        command = BkLinkCheckCmnd()
-        connected = False
         # run reset steps sequentially, but only after its sequence time passes
-        while not tm.expired():
+        while not connected and not tm.expired():
             elapsed = monotonic() - start
             while steps_done < len(steps) and elapsed >= steps[steps_done][0]:
                 _, rts, dtr = steps[steps_done]
                 self.hw_reset_apply(rts, dtr)
                 steps_done += 1
-            try:
-                response: BkLinkCheckResp = self.command(command)
-                if response and response.value == 0:
-                    connected = True
-                    break
-            except ValueError:
-                pass
+            connected = link_check()
 
         if connected and steps_done < len(steps):
             # link established mid-sequence: drop the remaining reset steps
