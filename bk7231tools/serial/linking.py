@@ -57,6 +57,7 @@ class BK7231SerialLinking(BK7231SerialInterface):
 
         command = BkLinkCheckCmnd()
         connected = False
+        # run reset steps sequentially, but only after its sequence time passes
         while not tm.expired():
             elapsed = monotonic() - start
             while steps_done < len(steps) and elapsed >= steps[steps_done][0]:
@@ -65,11 +66,16 @@ class BK7231SerialLinking(BK7231SerialInterface):
                 steps_done += 1
             try:
                 response: BkLinkCheckResp = self.command(command)
-                if response and response.value == 0 and steps_done == len(steps):
+                if response and response.value == 0:
                     connected = True
                     break
             except ValueError:
                 pass
+
+        if connected and steps_done < len(steps):
+            # link established mid-sequence: drop the remaining reset steps
+            # and release both lines so the chip isn't left held in reset
+            self.hw_reset_apply(False, False)
 
         self.drain()
         self.serial.timeout = tm_prev
